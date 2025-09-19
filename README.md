@@ -111,8 +111,8 @@ $$
     -> RCC_APB1ENR(APB1 Enable Register) 안에 bit25 = CANEN로 CAN 클록 사용한다는 것을 알 수 있음.  
 
 ### 실습
-1. STM32 보드 설정
-**STM32 보드 설정**
+**1. STM32 보드 설정**  
+
 ```
 - APB1 = 36MHz, 목표 = 500kbps
 - 선택: BRP = 4, TSEG1 = 13, TSEG2 = 2, SJW = 1
@@ -129,12 +129,13 @@ HSE 8MHz → PLL×9 = SYSCLK 72MHz
 -> NVIC: USB low priority or CAN RX0 interrupts Enable
 
 <img width="658" height="290" alt="image" src="https://github.com/user-attachments/assets/707d3a3f-ecf6-4391-9c84-c553eabf7174" />  
+
 - FIFO0에 수신이 생기면 콜백이 뜨는 라인
 
   *Connectivity -> USART2*
 <img width="686" height="761" alt="image" src="https://github.com/user-attachments/assets/ad14f82c-ffcd-461d-ae11-0fd85f06b7db" />
 
-2. 코드 작성
+**2. 코드 작성**
 
 **CAN 초기화 코드**
 -> 자동으로 생성
@@ -167,12 +168,14 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
 ```
-<img width="741" height="400" alt="image" src="https://github.com/user-attachments/assets/da22bb66-2840-4b83-957f-c66629f21ce4" />
-- **Init (INAK=1, SLAK=0)**: BTR/LBKM/SILM/필터 설정
-- **Normal (INAK=0, SLAK=0)**: 송수신/중재/ACK
-- **Sleep (INAK=0, SLAK=1)**: 저전력, 버스 청취
+<img width="741" height="400" alt="image" src="https://github.com/user-attachments/assets/da22bb66-2840-4b83-957f-c66629f21ce4" />  
+
+- **Init (INAK=1, SLAK=0)**: BTR/LBKM/SILM/필터 설정  
+- **Normal (INAK=0, SLAK=0)**: 송수신/중재/ACK  
+- **Sleep (INAK=0, SLAK=1)**: 저전력, 버스 청취  
   
-**실제 코드 흐름**
+**실제 코드 흐름**  
+
 1. `HAL_CAN_Init()` : 드라이버가 Init 모드 진입 후 BRT/필터 반영  
 2. 필터 설정: `HAL_CAN_ConfigFilter`  
 3. 시작: `HAL_CAN_Start()` -> `INRQ=0` -> Normal 모드(INAK = 0)
@@ -180,5 +183,11 @@ static void MX_CAN_Init(void)
 5. 송신: `HAL_CAN_AddTxMessage()`
 6. Loopback 모드 작동: 내가 보낸 프레임이 필터 통과 -> Rx0 콜백 호출(`HAL_CAN_RxFifo0MsgPendingCallback`)
 
+
+**출력 결과**  
+<img width="422" height="77" alt="image" src="https://github.com/user-attachments/assets/689ab16a-92b2-4a6c-a5b0-30c2f18ae8dd" />  
+-> Txdata[5] = 'H' = 48, 'E' = 45, 'L' = 4C, 'L' = 4C, 'O' = 4F 수신받아 출력됨을 확인
+<img width="388" height="27" alt="image" src="https://github.com/user-attachments/assets/fd9ea8fe-aada-4457-9579-b718847cba5e" />  
+-> COM3 STM32-VCP 로 연결, 115200 baud rate로 통신
 
 
