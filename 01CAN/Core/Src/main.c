@@ -137,7 +137,7 @@ int main(void)
   TxHeader.RTR = CAN_RTR_DATA; // 데이터 프레임
   TxHeader.DLC = 5; // 데이터 길이(byte)
 
-
+  rx_ready = 0;
   // 3. 전송 요정
   if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &mailbox) == HAL_OK){
 	  while(HAL_CAN_IsTxMessagePending(&hcan, mailbox)){} // 메일박스 비워질 떄 까지 대기
@@ -147,6 +147,20 @@ int main(void)
   else {
 	  printf("Tx enqueue failed\r\n");
   }
+
+  // rx 인터럽트 호출될 때까지 대기
+  while(!rx_ready){
+	  __NOP();
+  }
+
+  // RX Data print
+	printf("RX: ID = 0x%03lX DLC:%lu Data:",
+			(unsigned long)rxheader.StdId, (unsigned long)rxheader.DLC);
+	for(uint32_t i = 0; i < rxheader.DLC; ++i){
+		printf(" %02X", rxdata[i]);
+	}
+	printf("\r\n");
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -318,12 +332,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *phcan)
 {
 	if(HAL_CAN_GetRxMessage(phcan, CAN_RX_FIFO0,
             &rxheader, rxdata) == HAL_OK){
-		printf("RX: ID = 0x%03lX DLC:%lu Data:",
-				(unsigned long)rxheader.StdId, (unsigned long)rxheader.DLC);
-		for(uint32_t i = 0; i < rxheader.DLC; ++i){
-			printf(" %02X", rxdata[i]);
-		}
-		printf("\r\n");
+		rx_ready = 1;
 	}
 
 }
