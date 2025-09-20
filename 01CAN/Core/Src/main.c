@@ -44,9 +44,9 @@ CAN_HandleTypeDef hcan;
 UART_HandleTypeDef huart2;
 
 // rx
-volatile uint8_t rx_ready = 0;
-CAN_RxHeaderTypeDef rxheader;
-uint8_t rxdata[8];
+volatile uint8_t Rx_ready = 0;
+CAN_RxHeaderTypeDef Rxheader;
+uint8_t Rxdata[8];
 
 /* USER CODE BEGIN PV */
 
@@ -58,7 +58,7 @@ static void MX_GPIO_Init(void);
 static void MX_CAN_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void CAN_DumpDiag(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,57 +119,73 @@ int main(void)
   MX_CAN_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  printf("\r\n === bxCAN Loopback Test ===\r\n");
+  printf("\r\n=== bxCAN RPI Test ===\r\n");
 
-  // 1. filter & CAN 시작 & RX 인터럽트
   CAN_Filter_AllPass(); // 필터 적용
-  HAL_CAN_Start(&hcan);
-  // RX0 인터럽트 on -> Loopback이므로, 내가쏜게 바로 RX로 들어옴
-  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING); // RX 인터럽트 on
 
-  // 2. Test Frame Transmit
+  HAL_StatusTypeDef st;
+
+  /* CAN start + 에러 확인 */
+  st = HAL_CAN_Start(&hcan);
+  if (st != HAL_OK) {
+      printf("HAL_CAN_Start FAIL, err=0x%08lX\r\n",
+             (unsigned long)HAL_CAN_GetError(&hcan));
+      while (1) { }  // 여기 걸리면 하드웨어 초기화 단계 문제
+  }
+  printf("HAL_CAN_Start OK\r\n");
+
+  /* 알림 활성화 (RX/에러/버스오프) */
+  st = HAL_CAN_ActivateNotification(&hcan,
+      CAN_IT_RX_FIFO0_MSG_PENDING |
+      CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE |
+      CAN_IT_BUSOFF | CAN_IT_LAST_ERROR_CODE);
+  printf("ActivateNotification %s\r\n", (st==HAL_OK) ? "OK" : "FAIL");
+
+  /* 송신 프레임 */
   CAN_TxHeaderTypeDef TxHeader = {0};
-  uint8_t TxData[5] = {'H', 'E', 'L', 'L', 'O'}; // 송신 데이터
+  uint8_t TxData[8] = {'H','E','L','L','O','!','J','H'};
   uint32_t mailbox;
-
-  TxHeader.StdId = 0x123; // 11bit
-  TxHeader.IDE = CAN_ID_STD; // 표준/확장 선택 -> 표준
-  TxHeader.RTR = CAN_RTR_DATA; // 데이터 프레임
-  TxHeader.DLC = 5; // 데이터 길이(byte)
-
-  rx_ready = 0;
-  // 3. 전송 요정
-  if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &mailbox) == HAL_OK){
-	  while(HAL_CAN_IsTxMessagePending(&hcan, mailbox)){} // 메일박스 비워질 떄 까지 대기
-	  printf("TX: ID=0x%03lx DLC=%lu\r\n",
-			  (unsigned long)TxHeader.StdId, (unsigned long)TxHeader.DLC);
-  }
-  else {
-	  printf("Tx enqueue failed\r\n");
-  }
-
-  // rx 인터럽트 호출될 때까지 대기
-  while(!rx_ready){
-	  __NOP();
-  }
-
-  // RX Data print
-	printf("RX: ID = 0x%03lX DLC:%lu Data:",
-			(unsigned long)rxheader.StdId, (unsigned long)rxheader.DLC);
-	for(uint32_t i = 0; i < rxheader.DLC; ++i){
-		printf(" %02X", rxdata[i]);
-	}
-	printf("\r\n");
-
+  TxHeader.StdId = 0x123;
+  TxHeader.IDE   = CAN_ID_STD;
+  TxHeader.RTR   = CAN_RTR_DATA;
+  TxHeader.DLC   = 8;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
+      /* 송신 시도 */
+      st = HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &mailbox);
+      printf("[CAN] AddTx=%d, mbx=%lu\r\n", (int)st, (unsigned long)mailbox);
 
-    /* USER CODE BEGIN 3 */
+      if (st == HAL_OK) {
+          /* 전송 완료 대기(타임아웃 100ms) */
+          uint32_t t0 = HAL_GetTick();
+          while (HAL_CAN_IsTxMessagePending(&hcan, mailbox)) {
+              if (HAL_GetTick() - t0 > 100) {
+                  printf("[CAN] TX wait TIMEOUT\r\n");
+                  break;
+              }
+          }
+          printf("[CAN] TX done\r\n");
+          CAN_DumpDiag();
+      } else {
+          printf("[CAN] Tx enqueue failed, err=0x%08lX\r\n",
+                 (unsigned long)HAL_CAN_GetError(&hcan));
+          CAN_DumpDiag();
+      }
+
+      /* 수신 로그 (옵션) */
+      if (Rx_ready) {
+          Rx_ready = 0;
+          printf("RX 0x%03lX DLC:%lu Data:",
+                 (unsigned long)Rxheader.StdId, (unsigned long)Rxheader.DLC);
+          for (uint32_t i=0; i<Rxheader.DLC; ++i) printf(" %02X", Rxdata[i]);
+          printf("\r\n");
+      }
+
+      HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -229,14 +245,14 @@ static void MX_CAN_Init(void)
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN1;
   hcan.Init.Prescaler = 4;
-  hcan.Init.Mode = CAN_MODE_LOOPBACK;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
-  hcan.Init.AutoBusOff = DISABLE;
-  hcan.Init.AutoWakeUp = DISABLE;
-  hcan.Init.AutoRetransmission = DISABLE;
+  hcan.Init.AutoBusOff = ENABLE;  // 에러 많아 BUS-OFF되면 자동 복귀
+  hcan.Init.AutoWakeUp = ENABLE; // Sleep/Wake 자동
+  hcan.Init.AutoRetransmission = ENABLE;
   hcan.Init.ReceiveFifoLocked = DISABLE;
   hcan.Init.TransmitFifoPriority = DISABLE;
   if (HAL_CAN_Init(&hcan) != HAL_OK)
@@ -331,10 +347,25 @@ static void MX_GPIO_Init(void)
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *phcan)
 {
 	if(HAL_CAN_GetRxMessage(phcan, CAN_RX_FIFO0,
-            &rxheader, rxdata) == HAL_OK){
-		rx_ready = 1;
+            &Rxheader, Rxdata) == HAL_OK){
+		Rx_ready = 1;
 	}
 
+}
+
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *h){
+  uint32_t e = HAL_CAN_GetError(h);
+  printf("CAN ERR: 0x%08lX\r\n", (unsigned long)e);
+}
+
+static void CAN_DumpDiag(void){
+    uint32_t esr = CAN1->ESR;   // Error Status
+    uint32_t tsr = CAN1->TSR;   // Tx Status
+    uint8_t  rec = (esr >> 24) & 0xFF;
+    uint8_t  tec = (esr >> 16) & 0xFF;
+    uint8_t  lec = (esr >> 4)  & 0x07;
+    printf("[CAN] ESR=0x%08lX REC=%u TEC=%u LEC=%u  TSR=0x%08lX\r\n",
+        (unsigned long)esr, rec, tec, lec, (unsigned long)tsr);
 }
 /* USER CODE END 4 */
 
