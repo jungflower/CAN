@@ -255,6 +255,8 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *phcan)
 https://forums.raspberrypi.com/viewtopic.php?t=141052  
 -> 위 링크에 나온 것처럼 mcp2515 모듈 사용 시, 라즈베리파이는 개조 필요  
 
+![KakaoTalk_20250920_173201464](https://github.com/user-attachments/assets/f491fd4c-ce39-414a-a597-bee11305a844)
+
 ```
 Physical	Name	BCM	용도
 1	3.3V	-	전원 3.3V
@@ -333,5 +335,12 @@ void HAL_CAN_MspInit(CAN_HandleTypeDef* hcan)
 ```
 
 -> `PA11` -> CAN_RX / `PA12` : CAN_TX  
+
+출력 결과
+
+<img width="591" height="382" alt="image" src="https://github.com/user-attachments/assets/541daa70-3246-4ffc-ba04-da984d287728" />  
+-> STM32에서 송신은 완료 but RPI간 실제 메세지 송수신 하드웨어 이슈로 미완료
+
+
 
 
