@@ -123,8 +123,10 @@ HSE 8MHz → PLL×9 = SYSCLK 72MHz
 → Bitrate = 1/Tbit = 500 kbps
 → sample point = (1 + 13) / 16 = 87.5%
 ```
+
 *Connectivity → CAN 설정*
 <img width="652" height="610" alt="image" src="https://github.com/user-attachments/assets/15ee8a5e-314e-49b9-8493-f9456e6c597f" />  
+
 -> 위와 같이 bitrate 설정 및 loopback 모드 설정   
 -> NVIC: USB low priority or CAN RX0 interrupts Enable
 
@@ -183,6 +185,64 @@ static void MX_CAN_Init(void)
 5. 송신: `HAL_CAN_AddTxMessage()`
 6. Loopback 모드 작동: 내가 보낸 프레임이 필터 통과 -> Rx0 콜백 호출(`HAL_CAN_RxFifo0MsgPendingCallback`)
 
+```C
+  MX_CAN_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+  printf("\r\n === bxCAN Loopback Test ===\r\n");
+
+  // 1. filter & CAN 시작 & RX 인터럽트
+  CAN_Filter_AllPass(); // 필터 적용
+  HAL_CAN_Start(&hcan);
+  // RX0 인터럽트 on -> Loopback이므로, 내가쏜게 바로 RX로 들어옴
+  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING); // RX 인터럽트 on
+
+  // 2. Test Frame Transmit
+  CAN_TxHeaderTypeDef TxHeader = {0};
+  uint8_t TxData[5] = {'H', 'E', 'L', 'L', 'O'}; // 송신 데이터
+  uint32_t mailbox;
+
+  TxHeader.StdId = 0x123; // 11bit
+  TxHeader.IDE = CAN_ID_STD; // 표준/확장 선택 -> 표준
+  TxHeader.RTR = CAN_RTR_DATA; // 데이터 프레임
+  TxHeader.DLC = 5; // 데이터 길이(byte)
+
+  rx_ready = 0;
+  // 3. 전송 요정
+  if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &mailbox) == HAL_OK){
+	  while(HAL_CAN_IsTxMessagePending(&hcan, mailbox)){} // 메일박스 비워질 떄 까지 대기
+	  printf("TX: ID=0x%03lx DLC=%lu\r\n",
+			  (unsigned long)TxHeader.StdId, (unsigned long)TxHeader.DLC);
+  }
+  else {
+	  printf("Tx enqueue failed\r\n");
+  }
+
+  // rx 인터럽트 호출될 때까지 대기
+  while(!rx_ready){
+	  __NOP();
+  }
+
+  // RX Data print
+	printf("RX: ID = 0x%03lX DLC:%lu Data:",
+			(unsigned long)rxheader.StdId, (unsigned long)rxheader.DLC);
+	for(uint32_t i = 0; i < rxheader.DLC; ++i){
+		printf(" %02X", rxdata[i]);
+	}
+	printf("\r\n");
+```
+Rx 수신부 인터럽트 코드  
+```C
+// RX0 수신 콜백: RX FIFO0에 프레임이 들어오면 HAL이 이 콜백을 불러줌. -> 안전하게 16byte로 출력
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *phcan)
+{
+	if(HAL_CAN_GetRxMessage(phcan, CAN_RX_FIFO0,
+            &rxheader, rxdata) == HAL_OK){
+		rx_ready = 1;
+	}
+
+}
+```
 
 **출력 결과**  
 <img width="422" height="77" alt="image" src="https://github.com/user-attachments/assets/689ab16a-92b2-4a6c-a5b0-30c2f18ae8dd" />  
@@ -191,7 +251,7 @@ static void MX_CAN_Init(void)
 -> COM3 STM32-VCP 로 연결, 115200 baud rate로 통신
 
 ### CAN 통신 라즈베리파이4b <-> STM32
-**HW 회로도**
+**라즈베리파이 HW 회로도**
 https://forums.raspberrypi.com/viewtopic.php?t=141052  
 -> 위 링크에 나온 것처럼 mcp2515 모듈 사용 시, 라즈베리파이는 개조 필요  
 
@@ -209,24 +269,69 @@ Physical	Name	BCM	용도
 ```
 **라즈베리파이 설정**
 <img width="452" height="81" alt="image" src="https://github.com/user-attachments/assets/03e0e1a9-f52a-48b4-992a-748657a6efbe" />
-/boot/firmware/config.txt 파일에 위 사진과 같이 dtoverlay 추가  
+`/boot/firmware/config.txt` 파일에 위 사진과 같이 dtoverlay 추가  
 
 <img width="638" height="336" alt="image" src="https://github.com/user-attachments/assets/26aeae7d-b9f5-4176-bbf9-f1773841e0f2" />  
 -> reboot 후 위와 같은 dmesg 찍히면 잘 올라감을 확인  
 
-$ sudo ip link set can0 up type can bitrate 500000  
+$ `sudo ip link set can0 up type can bitrate 500000`  
 -> 500kbps can 통신 인터페이스 활성화  
 
 <img width="647" height="188" alt="image" src="https://github.com/user-attachments/assets/bf77c16e-df23-4245-a142-5004970793a0" />
 
-$ ip -details link show can0  
+$ `ip -details link show can0`  
 -> CAN 인터페이스 활성화 된 것 확인 방법1
 
 <img width="642" height="152" alt="image" src="https://github.com/user-attachments/assets/2320124c-0646-4351-a6d9-2018217da861" />
 
-$ ifconfig  
+$ `ifconfig`  
 -> can0 인터페이스 활성화 확인 가능 방법2
 
-$ sudo apt install can-utils  
+$ `sudo apt install can-utils`  
 -> can 유틸리티 설치  
+
+**
+
+**stm32코드 수정 : loopback -> normal**  
+```C
+void HAL_CAN_MspInit(CAN_HandleTypeDef* hcan)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if(hcan->Instance==CAN1)
+  {
+    /* USER CODE BEGIN CAN1_MspInit 0 */
+
+    /* USER CODE END CAN1_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_CAN1_CLK_ENABLE();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**CAN GPIO Configuration
+    PA11     ------> CAN_RX
+    PA12     ------> CAN_TX
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_11;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_12;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* CAN1 interrupt Init */
+    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
+    /* USER CODE BEGIN CAN1_MspInit 1 */
+
+    /* USER CODE END CAN1_MspInit 1 */
+
+  }
+
+}
+```
+
+-> `PA11` -> CAN_RX / `PA12` : CAN_TX  
+
 
