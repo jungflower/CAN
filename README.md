@@ -190,4 +190,43 @@ static void MX_CAN_Init(void)
 <img width="388" height="27" alt="image" src="https://github.com/user-attachments/assets/fd9ea8fe-aada-4457-9579-b718847cba5e" />  
 -> COM3 STM32-VCP 로 연결, 115200 baud rate로 통신
 
+### CAN 통신 라즈베리파이4b <-> STM32
+**HW 회로도**
+https://forums.raspberrypi.com/viewtopic.php?t=141052  
+-> 위 링크에 나온 것처럼 mcp2515 모듈 사용 시, 라즈베리파이는 개조 필요  
+
+```
+Physical	Name	BCM	용도
+1	3.3V	-	전원 3.3V
+2	5V	-	전원 5V
+6	0V	-	GND
+19	MOSI	10	SPI MOSI
+21	MISO	9	SPI MISO
+23	SCLK	11	SPI CLK
+24	CE0	8	SPI CS0
+26	CE1	7	SPI CS1
+32	GPIO.12	12	보통 MCP2515 INT 연결 (예: dtoverlay interrupt=12)
+```
+**라즈베리파이 설정**
+<img width="452" height="81" alt="image" src="https://github.com/user-attachments/assets/03e0e1a9-f52a-48b4-992a-748657a6efbe" />
+/boot/firmware/config.txt 파일에 위 사진과 같이 dtoverlay 추가  
+
+<img width="638" height="336" alt="image" src="https://github.com/user-attachments/assets/26aeae7d-b9f5-4176-bbf9-f1773841e0f2" />  
+-> reboot 후 위와 같은 dmesg 찍히면 잘 올라감을 확인  
+
+$ sudo ip link set can0 up type can bitrate 500000  
+-> 500kbps can 통신 인터페이스 활성화  
+
+<img width="647" height="188" alt="image" src="https://github.com/user-attachments/assets/bf77c16e-df23-4245-a142-5004970793a0" />
+
+$ ip -details link show can0  
+-> CAN 인터페이스 활성화 된 것 확인 방법1
+
+<img width="642" height="152" alt="image" src="https://github.com/user-attachments/assets/2320124c-0646-4351-a6d9-2018217da861" />
+
+$ ifconfig  
+-> can0 인터페이스 활성화 확인 가능 방법2
+
+$ sudo apt install can-utils  
+-> can 유틸리티 설치  
 
